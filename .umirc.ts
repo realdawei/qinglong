@@ -16,6 +16,11 @@ export default defineConfig({
   favicons: [`https://qn.whyour.cn/favicon.svg`],
   publicPath: process.env.NODE_ENV === 'production' ? './' : '/',
   proxy: {
+    [`${baseUrl}api/update`]: {
+      target: 'http://127.0.0.1:5300/',
+      changeOrigin: true,
+      pathRewrite: { [`^${baseUrl}api/update`]: '/api' },
+    },
     [`${baseUrl}api/public`]: {
       target: 'http://127.0.0.1:5400/',
       changeOrigin: true,
@@ -38,13 +43,12 @@ export default defineConfig({
       }),
     );
   }) as any,
-  externals: {
-    react: 'window.React',
-    'react-dom': 'window.ReactDOM',
-  },
-  headScripts: [
-    `./api/env.js`,
-    'https://gw.alipayobjects.com/os/lib/react/18.2.0/umd/react.production.min.js',
-    'https://gw.alipayobjects.com/os/lib/react-dom/18.2.0/umd/react-dom.production.min.js',
+  headScripts: [`./api/env.js`],
+  copy: [
+    {
+      from: 'node_modules/monaco-editor/min/vs',
+      to: 'static/dist/monaco-editor/min/vs',
+    },
   ],
+  npmClient: 'pnpm',
 });

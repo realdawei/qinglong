@@ -9,17 +9,17 @@ import {
 } from '@ant-design/icons';
 import { PageLoading } from '@ant-design/pro-layout';
 import Ansi from 'ansi-to-react';
+import WebSocketManager from '@/utils/websocket';
+import { Status } from './type';
 
 const DependenceLogModal = ({
   dependence,
   handleCancel,
   visible,
-  socketMessage,
 }: {
   dependence?: any;
   visible: boolean;
   handleCancel: (needRemove?: boolean) => void;
-  socketMessage: any;
 }) => {
   const [value, setValue] = useState<string>('');
   const [executing, setExecuting] = useState<any>(true);
@@ -54,7 +54,7 @@ const DependenceLogModal = ({
           code === 200 &&
           localStorage.getItem('logDependence') === String(dependence.id)
         ) {
-          const log = (data.log || []).join('') as string;
+          const log = (data?.log || []).join('') as string;
           setValue(log);
           setExecuting(!log.includes('结束时间'));
           setIsRemoveFailed(log.includes('删除失败'));
@@ -95,21 +95,31 @@ const DependenceLogModal = ({
     }
   }, [dependence]);
 
-  useEffect(() => {
-    if (!socketMessage || !dependence) return;
-    const { type, message, references } = socketMessage;
+  const handleMessage = (payload: any) => {
+    const { message, references } = payload;
     if (
-      type === 'installDependence' &&
       references.length > 0 &&
-      references.includes(dependence.id)
+      references.includes(dependence.id) &&
+      [Status.删除中, Status.安装中].includes(dependence.status)
     ) {
       if (message.includes('结束时间')) {
         setExecuting(false);
         setIsRemoveFailed(message.includes('删除失败'));
       }
-      setValue(`${value}${message}`);
+      setValue((p) => `${p}${message}`);
     }
-  }, [socketMessage]);
+  };
+
+  useEffect(() => {
+    const ws = WebSocketManager.getInstance();
+    ws.subscribe('installDependence', handleMessage);
+    ws.subscribe('uninstallDependence', handleMessage);
+
+    return () => {
+      ws.unsubscribe('installDependence', handleMessage);
+      ws.unsubscribe('uninstallDependence', handleMessage);
+    };
+  }, [dependence]);
 
   useEffect(() => {
     setIsPhone(document.body.clientWidth < 768);

@@ -19,12 +19,19 @@ const lastVersionFile = `https://qn.whyour.cn/version.yaml`;
 const rootPath = process.env.QL_DIR as string;
 const envFound = dotenv.config({ path: path.join(rootPath, '.env') });
 
-const dataPath = path.join(rootPath, 'data/');
+let dataPath = path.join(rootPath, 'data/');
+
+if (process.env.QL_DATA_DIR) {
+  dataPath = process.env.QL_DATA_DIR.replace(/\/$/g, '');
+}
+
 const shellPath = path.join(rootPath, 'shell/');
+const preloadPath = path.join(shellPath, 'preload/');
 const tmpPath = path.join(rootPath, '.tmp/');
 const samplePath = path.join(rootPath, 'sample/');
 const configPath = path.join(dataPath, 'config/');
 const scriptPath = path.join(dataPath, 'scripts/');
+const repoPath = path.join(dataPath, 'repo/');
 const bakPath = path.join(dataPath, 'bak/');
 const logPath = path.join(dataPath, 'log/');
 const dbPath = path.join(dataPath, 'db/');
@@ -32,7 +39,11 @@ const uploadPath = path.join(dataPath, 'upload/');
 const sshdPath = path.join(dataPath, 'ssh.d/');
 const systemLogPath = path.join(dataPath, 'syslog/');
 
-const envFile = path.join(configPath, 'env.sh');
+const envFile = path.join(preloadPath, 'env.sh');
+const jsEnvFile = path.join(preloadPath, 'env.js');
+const pyEnvFile = path.join(preloadPath, 'env.py');
+const jsNotifyFile = path.join(preloadPath, 'notify.js');
+const pyNotifyFile = path.join(preloadPath, 'notify.py');
 const confFile = path.join(configPath, 'config.sh');
 const crontabFile = path.join(configPath, 'crontab.list');
 const authConfigFile = path.join(configPath, 'auth.json');
@@ -47,6 +58,7 @@ const configString = 'config sample crontab shareCode diy';
 const versionFile = path.join(rootPath, 'version.yaml');
 const dataTgzFile = path.join(tmpPath, 'data.tgz');
 const shareShellFile = path.join(shellPath, 'share.sh');
+const dependenceProxyFile = path.join(configPath, 'dependence-proxy.sh');
 
 if (envFound.error) {
   throw new Error("⚠️  Couldn't find .env file  ⚠️");
@@ -56,6 +68,7 @@ export default {
   port: parseInt(process.env.BACK_PORT as string, 10),
   cronPort: parseInt(process.env.CRON_PORT as string, 10),
   publicPort: parseInt(process.env.PUBLIC_PORT as string, 10),
+  updatePort: parseInt(process.env.UPDATE_PORT as string, 10),
   secret: process.env.SECRET || createRandomString(16, 32),
   logs: {
     level: process.env.LOG_LEVEL || 'silly',
@@ -68,6 +81,7 @@ export default {
   dataPath,
   dataTgzFile,
   shareShellFile,
+  dependenceProxyFile,
   configString,
   loginFaild,
   authError,
@@ -79,17 +93,25 @@ export default {
   sampleFile,
   confFile,
   envFile,
+  jsEnvFile,
+  pyEnvFile,
+  jsNotifyFile,
+  pyNotifyFile,
   dbPath,
   uploadPath,
   configPath,
   scriptPath,
+  repoPath,
   samplePath,
   blackFileList: [
     'auth.json',
     'config.sh.sample',
     'cookie.sh',
     'crontab.list',
+    'dependence-proxy.sh',
     'env.sh',
+    'env.js',
+    'env.py',
     'token.json',
   ],
   writePathList: [configPath, scriptPath],

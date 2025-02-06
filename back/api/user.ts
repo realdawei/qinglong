@@ -74,6 +74,9 @@ export default (app: Router) => {
     async (req: Request, res: Response, next: NextFunction) => {
       const logger: Logger = Container.get('logger');
       try {
+        if (process.env.DeployEnv === 'demo') {
+          return res.send({ code: 450, message: '未知错误' });
+        }
         const userService = Container.get(UserService);
         await userService.updateUsernameAndPassword(req.body);
         res.send({ code: 200, message: '更新成功' });
@@ -87,7 +90,7 @@ export default (app: Router) => {
     const logger: Logger = Container.get('logger');
     try {
       const userService = Container.get(UserService);
-      const authInfo = await userService.getUserInfo();
+      const authInfo = await userService.getAuthInfo();
       res.send({
         code: 200,
         data: {

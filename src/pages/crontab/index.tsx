@@ -36,6 +36,7 @@ import {
   PlusOutlined,
   UnorderedListOutlined,
   CheckOutlined,
+  CopyOutlined,
 } from '@ant-design/icons';
 import config from '@/utils/config';
 import { PageContainer } from '@ant-design/pro-layout';
@@ -43,7 +44,6 @@ import { request } from '@/utils/http';
 import CronModal, { CronLabelModal } from './modal';
 import CronLogModal from './logModal';
 import CronDetailModal from './detail';
-import cron_parser from 'cron-parser';
 import { diffTime } from '@/utils/date';
 import { history, useOutletContext } from '@umijs/max';
 import './index.less';
@@ -52,14 +52,17 @@ import ViewManageModal from './viewManageModal';
 import { FilterValue, SorterResult } from 'antd/lib/table/interface';
 import { SharedContext } from '@/layouts';
 import useTableScrollHeight from '@/hooks/useTableScrollHeight';
-import { getCommandScript, parseCrontab } from '@/utils';
+import { getCommandScript, getCrontabsNextDate, parseCrontab } from '@/utils';
 import { ColumnProps } from 'antd/lib/table';
 import { useVT } from 'virtualizedtableforantd4';
 import { ICrontab, OperationName, OperationPath, CrontabStatus } from './type';
 import Name from '@/components/name';
+import dayjs from 'dayjs';
+import { noop, omit } from 'lodash';
 
-const { Text, Paragraph } = Typography;
+const { Text, Paragraph, Link } = Typography;
 const { Search } = Input;
+const SHOW_TAB_COUNT = 10;
 
 const Crontab = () => {
   const { headerStyle, isPhone, theme } = useOutletContext<SharedContext>();
@@ -75,17 +78,16 @@ const Crontab = () => {
           style={{
             wordBreak: 'break-all',
             marginBottom: 0,
+            color: '#1890ff',
+            cursor: 'pointer',
           }}
           ellipsis={{ tooltip: text, rows: 2 }}
+          onClick={() => {
+            setDetailCron(record);
+            setIsDetailModalVisible(true);
+          }}
         >
-          <a
-            onClick={() => {
-              setDetailCron(record);
-              setIsDetailModalVisible(true);
-            }}
-          >
-            {record.name || '-'}
-          </a>
+          <Link>{record.name || '-'}</Link>
         </Paragraph>
       ),
       sorter: {
@@ -184,17 +186,29 @@ const Crontab = () => {
         compare: (a, b) => a.schedule.localeCompare(b.schedule),
       },
       render: (text, record) => {
-        return record.extra_schedules?.length ? (
-          <Popover
-            placement="right"
-            content={record.extra_schedules?.map((x) => (
-              <div>{x.schedule}</div>
-            ))}
+        return (
+          <Paragraph
+            style={{
+              wordBreak: 'break-all',
+              marginBottom: 0,
+            }}
+            ellipsis={{
+              tooltip: {
+                placement: 'right',
+                title: (
+                  <>
+                    <div>{text}</div>
+                    {record.extra_schedules?.map((x) => (
+                      <div key={x.schedule}>{x.schedule}</div>
+                    ))}
+                  </>
+                ),
+              },
+              rows: 2,
+            }}
           >
             {text}
-          </Popover>
-        ) : (
-          text
+          </Paragraph>
         );
       },
     },
@@ -225,7 +239,6 @@ const Crontab = () => {
         },
       },
       render: (text, record) => {
-        const language = navigator.language || navigator.languages[0];
         return (
           <span
             style={{
@@ -233,11 +246,9 @@ const Crontab = () => {
             }}
           >
             {record.last_execution_time
-              ? new Date(record.last_execution_time * 1000)
-                  .toLocaleString(language, {
-                    hour12: false,
-                  })
-                  .replace(' 24:', ' 00:')
+              ? dayjs(record.last_execution_time * 1000).format(
+                  'YYYY-MM-DD HH:mm:ss',
+                )
               : '-'}
           </span>
         );
@@ -252,28 +263,13 @@ const Crontab = () => {
         },
       },
       render: (text, record) => {
-        const language = navigator.language || navigator.languages[0];
-        return record.nextRunTime
-          .toLocaleString(language, {
-            hour12: false,
-          })
-          .replace(' 24:', ' 00:');
+        return dayjs(record.nextRunTime).format('YYYY-MM-DD HH:mm:ss');
       },
     },
     {
       title: intl.get('关联订阅'),
       width: 185,
-      render: (text, record: any) =>
-        record.sub_id ? (
-          <Name
-            service={() =>
-              request.get(`${config.apiPrefix}subscriptions/${record.sub_id}`)
-            }
-            options={{ ready: record?.sub_id, cacheKey: record.sub_id }}
-          />
-        ) : (
-          '-'
-        ),
+      render: (text, record: any) => record?.subscription?.name || '-',
     },
     {
       title: intl.get('操作'),
@@ -383,14 +379,27 @@ const Crontab = () => {
     }
     request
       .get(url)
-      .then(({ code, data: _data }) => {
+      .then(async ({ code, data: _data }) => {
         if (code === 200) {
           const { data, total } = _data;
+          const subscriptions = await request.get(
+            `${config.apiPrefix}subscriptions?ids=${JSON.stringify([
+              ...new Set(data.map((x) => x.sub_id).filter(Boolean)),
+            ])}`,
+            {
+              onError: noop,
+            },
+          );
+          const subscriptionMap = Object.fromEntries(
+            subscriptions?.data?.map((x) => [x.id, x]),
+          );
+
           setValue(
             data.map((x) => {
               return {
                 ...x,
-                nextRunTime: parseCrontab(x.schedule),
+                nextRunTime: getCrontabsNextDate(x.schedule, x.extra_schedules),
+                subscription: subscriptionMap?.[x.sub_id],
               };
             }),
           );
@@ -613,6 +622,7 @@ const Crontab = () => {
         icon:
           record.isDisabled === 1 ? <CheckCircleOutlined /> : <StopOutlined />,
       },
+      { label: intl.get('复制'), key: 'copy', icon: <CopyOutlined /> },
       { label: intl.get('删除'), key: 'delete', icon: <DeleteOutlined /> },
       {
         label: record.isPinned === 1 ? intl.get('取消置顶') : intl.get('置顶'),
@@ -648,6 +658,9 @@ const Crontab = () => {
       case 'edit':
         editCron(record, index);
         break;
+      case 'copy':
+        editCron(omit(record, 'id'), index);
+        break;
       case 'enableOrDisable':
         enabledOrDisabledCron(record, index);
         break;
@@ -678,7 +691,10 @@ const Crontab = () => {
         if (code === 200) {
           const index = value.findIndex((x) => x.id === cron.id);
           const result = [...value];
-          data.nextRunTime = parseCrontab(data.schedule);
+          data.nextRunTime = getCrontabsNextDate(
+            data.schedule,
+            data.extra_schedules,
+          );
           if (index !== -1) {
             result.splice(index, 1, {
               ...cron,
@@ -790,7 +806,7 @@ const Crontab = () => {
 
   useEffect(() => {
     if (viewConf && enabledCronViews && enabledCronViews.length > 0) {
-      const view = enabledCronViews.slice(4).find((x) => x.id === viewConf.id);
+      const view = enabledCronViews.slice(SHOW_TAB_COUNT).find((x) => x.id === viewConf.id);
       setMoreMenuActive(!!view);
     }
   }, [viewConf, enabledCronViews]);
@@ -820,7 +836,7 @@ const Crontab = () => {
       viewAction(key);
     },
     items: [
-      ...[...enabledCronViews].slice(4).map((x) => ({
+      ...[...enabledCronViews].slice(SHOW_TAB_COUNT).map((x) => ({
         label: (
           <Space style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span>{x.name}</span>
@@ -846,6 +862,10 @@ const Crontab = () => {
         icon: <SettingOutlined />,
       },
     ],
+    style: {
+      maxHeight: 350,
+      overflowY: 'auto',
+    },
   };
 
   const getCronViews = () => {
@@ -936,7 +956,7 @@ const Crontab = () => {
         }
         onTabClick={tabClick}
         items={[
-          ...[...enabledCronViews].slice(0, 4).map((x) => ({
+          ...[...enabledCronViews].slice(0, SHOW_TAB_COUNT).map((x) => ({
             key: x.id,
             label: x.name,
           })),

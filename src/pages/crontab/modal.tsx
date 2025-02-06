@@ -21,9 +21,9 @@ const CronModal = ({
 
   const handleOk = async (values: any) => {
     setLoading(true);
-    const method = cron ? 'put' : 'post';
+    const method = cron?.id ? 'put' : 'post';
     const payload = { ...values };
-    if (cron) {
+    if (cron?.id) {
       payload.id = cron.id;
     }
     try {
@@ -34,7 +34,7 @@ const CronModal = ({
 
       if (code === 200) {
         message.success(
-          cron ? intl.get('更新任务成功') : intl.get('创建任务成功'),
+          cron?.id ? intl.get('更新任务成功') : intl.get('创建任务成功'),
         );
         handleCancel(data);
       }
@@ -50,7 +50,7 @@ const CronModal = ({
 
   return (
     <Modal
-      title={cron ? intl.get('编辑任务') : intl.get('创建任务')}
+      title={cron?.id ? intl.get('编辑任务') : intl.get('创建任务')}
       open={visible}
       forceRender
       centered
@@ -74,7 +74,11 @@ const CronModal = ({
         name="form_in_modal"
         initialValues={cron}
       >
-        <Form.Item name="name" label={intl.get('名称')}>
+        <Form.Item
+          name="name"
+          label={intl.get('名称')}
+          rules={[{ required: true, whitespace: true }]}
+        >
           <Input placeholder={intl.get('请输入任务名称')} />
         </Form.Item>
         <Form.Item
@@ -142,6 +146,62 @@ const CronModal = ({
         </Form.List>
         <Form.Item name="labels" label={intl.get('标签')}>
           <EditableTagGroup />
+        </Form.Item>
+        <Form.Item
+          name="task_before"
+          label={intl.get('执行前')}
+          tooltip={intl.get(
+            '运行任务前执行的命令，比如 cp/mv/python3 xxx.py/node xxx.js',
+          )}
+          rules={[
+            {
+              validator(rule, value) {
+                if (
+                  value &&
+                  (value.includes(' task ') || value.startsWith('task '))
+                ) {
+                  return Promise.reject(intl.get('不能包含 task 命令'));
+                }
+                return Promise.resolve();
+              },
+            },
+          ]}
+        >
+          <Input.TextArea
+            rows={4}
+            autoSize={{ minRows: 1, maxRows: 5 }}
+            placeholder={intl.get(
+              '请输入运行任务前要执行的命令，不能包含 task 命令',
+            )}
+          />
+        </Form.Item>
+        <Form.Item
+          name="task_after"
+          label={intl.get('执行后')}
+          tooltip={intl.get(
+            '运行任务后执行的命令，比如 cp/mv/python3 xxx.py/node xxx.js',
+          )}
+          rules={[
+            {
+              validator(rule, value) {
+                if (
+                  value &&
+                  (value.includes(' task ') || value.startsWith('task '))
+                ) {
+                  return Promise.reject(intl.get('不能包含 task 命令'));
+                }
+                return Promise.resolve();
+              },
+            },
+          ]}
+        >
+          <Input.TextArea
+            rows={4}
+            autoSize={{ minRows: 1, maxRows: 5 }}
+            placeholder={intl.get(
+              '请输入运行任务后要执行的命令，不能包含 task 命令',
+            )}
+          />
         </Form.Item>
       </Form>
     </Modal>

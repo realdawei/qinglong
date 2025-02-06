@@ -1,11 +1,13 @@
 import { Service, Inject } from 'typedi';
 import winston from 'winston';
-import fs, { existsSync } from 'fs';
+import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { Subscription } from '../data/subscription';
 import { formatUrl } from '../config/subscription';
 import config from '../config';
+import { fileExist, rmPath } from '../config/util';
+import { writeFileWithLock } from '../shared/utils';
 
 @Service()
 export default class SshKeyService {
@@ -18,45 +20,54 @@ export default class SshKeyService {
     this.initSshConfigFile();
   }
 
-  private initSshConfigFile() {
+  private async initSshConfigFile() {
     let config = '';
-    if (existsSync(this.sshConfigFilePath)) {
-      config = fs.readFileSync(this.sshConfigFilePath, { encoding: 'utf-8' });
+    const _exist = await fileExist(this.sshConfigFilePath);
+    if (_exist) {
+      config = await fs.readFile(this.sshConfigFilePath, { encoding: 'utf-8' });
     } else {
-      fs.writeFileSync(this.sshConfigFilePath, '');
+      await writeFileWithLock(this.sshConfigFilePath, '');
     }
     if (!config.includes(this.sshConfigHeader)) {
-      fs.writeFileSync(
+      await writeFileWithLock(
         this.sshConfigFilePath,
         `${this.sshConfigHeader}\n\n${config}`,
-        { encoding: 'utf-8' },
       );
     }
   }
 
-  private generatePrivateKeyFile(alias: string, key: string): void {
+  private async generatePrivateKeyFile(
+    alias: string,
+    key: string,
+  ): Promise<void> {
     try {
-      fs.writeFileSync(path.join(this.sshPath, alias), `${key}${os.EOL}`, {
-        encoding: 'utf8',
-        mode: '400',
-      });
+      await writeFileWithLock(
+        path.join(this.sshPath, alias),
+        `${key}${os.EOL}`,
+        {
+          encoding: 'utf8',
+          mode: '400',
+        },
+      );
     } catch (error) {
       this.logger.error('生成私钥文件失败', error);
     }
   }
 
-  private removePrivateKeyFile(alias: string): void {
+  private async removePrivateKeyFile(alias: string): Promise<void> {
     try {
       const filePath = path.join(this.sshPath, alias);
-      if (existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
+      await rmPath(filePath);
     } catch (error) {
       this.logger.error('删除私钥文件失败', error);
     }
   }
 
-  private generateSingleSshConfig(alias: string, host: string, proxy?: string) {
+  private async generateSingleSshConfig(
+    alias: string,
+    host: string,
+    proxy?: string,
+  ) {
     if (host === 'github.com') {
       host = `ssh.github.com\n    Port 443\n    HostkeyAlgorithms +ssh-rsa`;
     }
@@ -67,49 +78,52 @@ export default class SshKeyService {
       this.sshPath,
       alias,
     )}\n    StrictHostKeyChecking no\n${proxyStr}`;
-    fs.writeFileSync(`${path.join(this.sshPath, `${alias}.config`)}`, config, {
-      encoding: 'utf8',
-    });
+    await writeFileWithLock(
+      `${path.join(this.sshPath, `${alias}.config`)}`,
+      config,
+    );
   }
 
-  private removeSshConfig(alias: string) {
+  private async removeSshConfig(alias: string) {
     try {
       const filePath = path.join(this.sshPath, `${alias}.config`);
-      if (existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
+      await rmPath(filePath);
     } catch (error) {
       this.logger.error(`删除ssh配置文件${alias}失败`, error);
     }
   }
 
-  public addSSHKey(
+  public async addSSHKey(
     key: string,
     alias: string,
     host: string,
     proxy?: string,
-  ): void {
-    this.generatePrivateKeyFile(alias, key);
-    this.generateSingleSshConfig(alias, host, proxy);
+  ): Promise<void> {
+    await this.generatePrivateKeyFile(alias, key);
+    await this.generateSingleSshConfig(alias, host, proxy);
   }
 
-  public removeSSHKey(alias: string, host: string, proxy?: string): void {
-    this.removePrivateKeyFile(alias);
-    this.removeSshConfig(alias);
+  public async removeSSHKey(
+    alias: string,
+    host: string,
+    proxy?: string,
+  ): Promise<void> {
+    await this.removePrivateKeyFile(alias);
+    await this.removeSshConfig(alias);
   }
 
-  public setSshConfig(docs: Subscription[]) {
+  public async setSshConfig(docs: Subscription[]) {
     for (const doc of docs) {
       if (doc.type === 'private-repo' && doc.pull_type === 'ssh-key') {
         const { alias, proxy } = doc;
         const { host } = formatUrl(doc);
-        this.removePrivateKeyFile(alias);
-        this.removeSshConfig(alias);
-        this.generatePrivateKeyFile(
+        await this.removePrivateKeyFile(alias);
+        await this.removeSshConfig(alias);
+        await this.generatePrivateKeyFile(
           alias,
           (doc.pull_option as any).private_key,
         );
-        this.generateSingleSshConfig(alias, host, proxy);
+        await this.generateSingleSshConfig(alias, host, proxy);
       }
     }
   }
