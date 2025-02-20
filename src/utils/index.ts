@@ -1,6 +1,7 @@
 import intl from 'react-intl-universal';
 import { LANG_MAP, LOG_END_SYMBOL } from './const';
 import cron_parser from 'cron-parser';
+import { ICrontab } from '@/pages/crontab/type';
 
 export default function browserType() {
   // 权重：系统 + 系统版本 > 平台 > 内核 + 载体 + 内核版本 + 载体版本 > 外壳 + 外壳版本
@@ -154,9 +155,9 @@ export default function browserType() {
     shell === 'none'
       ? {}
       : {
-        shell, // wechat qq uc 360 2345 sougou liebao maxthon
-        shellVs,
-      },
+          shell, // wechat qq uc 360 2345 sougou liebao maxthon
+          shellVs,
+        },
   );
 
   console.log(
@@ -313,8 +314,9 @@ export function getCommandScript(
     ['.js', '.ts', '.sh', '.py'].some((y) => x.endsWith(y)),
   );
   if (!scriptsPart) return;
-  if (scriptsPart.startsWith('/ql/data/scripts')) {
-    scriptsPart = scriptsPart.replace('/ql/data/scripts/', '');
+  const scriptDir = `${window.__ENV__QL_DIR}/data/scripts`;
+  if (scriptsPart.startsWith(scriptDir)) {
+    scriptsPart = scriptsPart.replace(scriptDir, '');
   }
 
   let p: string, s: string;
@@ -329,15 +331,31 @@ export function getCommandScript(
   return [s, p];
 }
 
-export function parseCrontab(schedule: string): Date {
+export function parseCrontab(schedule: string): Date | null {
   try {
     const time = cron_parser.parseExpression(schedule);
     if (time) {
       return time.next().toDate();
     }
-  } catch (error) { }
+  } catch (error) {}
 
-  return new Date('1970');
+  return null;
+}
+
+export function getCrontabsNextDate(
+  schedule: string,
+  extra_schedules: ICrontab['extra_schedules'],
+): Date | null {
+  let date = parseCrontab(schedule);
+  if (extra_schedules?.length) {
+    extra_schedules.forEach((x) => {
+      const _date = parseCrontab(x.schedule);
+      if (_date && (!date || _date < date)) {
+        date = _date;
+      }
+    });
+  }
+  return date;
 }
 
 export function getExtension(filename: string) {
@@ -349,4 +367,23 @@ export function getExtension(filename: string) {
 export function getEditorMode(filename: string) {
   const extension = getExtension(filename) as keyof typeof LANG_MAP;
   return LANG_MAP[extension];
+}
+
+export function disableBody() {
+  const overlay = document.createElement('div');
+  overlay.style.position = 'fixed';
+  overlay.style.top = '0px';
+  overlay.style.left = '0px';
+  overlay.style.width = '100%';
+  overlay.style.height = '100%';
+  overlay.style.backgroundColor = 'transparent';
+  overlay.style.zIndex = '9999';
+  document.body.appendChild(overlay);
+
+  overlay.addEventListener('click', function (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  });
+
+  document.body.style.overflow = 'hidden';
 }

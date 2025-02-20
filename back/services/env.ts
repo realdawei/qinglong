@@ -1,7 +1,7 @@
 import { Service, Inject } from 'typedi';
 import winston from 'winston';
 import config from '../config';
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import {
   Env,
   EnvModel,
@@ -13,6 +13,7 @@ import {
 } from '../data/env';
 import groupBy from 'lodash/groupBy';
 import { FindOptions, Op } from 'sequelize';
+import { writeFileWithLock } from '../shared/utils';
 
 @Service()
 export default class EnvService {
@@ -40,7 +41,7 @@ export default class EnvService {
   }
 
   public async insert(payloads: Env[]): Promise<Env[]> {
-    const result = [];
+    const result: Env[] = [];
     for (const env of payloads) {
       const doc = await EnvModel.create(env, { returning: true });
       result.push(doc);
@@ -61,7 +62,7 @@ export default class EnvService {
     return await this.getDb({ id: payload.id });
   }
 
-  public async remove(ids: string[]) {
+  public async remove(ids: number[]) {
     await EnvModel.destroy({ where: { id: ids } });
     await this.set_envs();
   }
@@ -149,7 +150,7 @@ export default class EnvService {
         ['position', 'DESC'],
         ['createdAt', 'ASC'],
       ]);
-      return result as any;
+      return result;
     } catch (error) {
       throw error;
     }
@@ -160,15 +161,18 @@ export default class EnvService {
       where: { ...query },
       order: [...sort],
     });
-    return docs;
+    return docs.map((x) => x.get({ plain: true }));
   }
 
   public async getDb(query: FindOptions<Env>['where']): Promise<Env> {
     const doc: any = await EnvModel.findOne({ where: { ...query } });
-    return doc && (doc.get({ plain: true }) as Env);
+    if (!doc) {
+      throw new Error(`Env ${JSON.stringify(query)} not found`);
+    }
+    return doc.get({ plain: true });
   }
 
-  public async disabled(ids: string[]) {
+  public async disabled(ids: number[]) {
     await EnvModel.update(
       { status: EnvStatus.disabled },
       { where: { id: ids } },
@@ -176,12 +180,12 @@ export default class EnvService {
     await this.set_envs();
   }
 
-  public async enabled(ids: string[]) {
+  public async enabled(ids: number[]) {
     await EnvModel.update({ status: EnvStatus.normal }, { where: { id: ids } });
     await this.set_envs();
   }
 
-  public async updateNames({ ids, name }: { ids: string[]; name: string }) {
+  public async updateNames({ ids, name }: { ids: number[]; name: string }) {
     await EnvModel.update({ name }, { where: { id: ids } });
     await this.set_envs();
   }
@@ -193,6 +197,8 @@ export default class EnvService {
     });
     const groups = groupBy(envs, 'name');
     let env_string = '';
+    let js_env_string = '';
+    let py_env_string = 'import os\n';
     for (const key in groups) {
       if (Object.prototype.hasOwnProperty.call(groups, key)) {
         const group = groups[key];
@@ -205,9 +211,23 @@ export default class EnvService {
             .replace(/'/g, "'\\''")
             .trim();
           env_string += `export ${key}='${value}'\n`;
+          const _env_value = `${group
+            .map((x) => x.value)
+            .join('&')
+            .replace(/\\/g, '\\\\')}`;
+          js_env_string += `process.env.${key}=\`${_env_value.replace(
+            /\`/g,
+            '\\`',
+          )}\`;\n`;
+          py_env_string += `os.environ['${key}']='''${_env_value.replace(
+            /\'/g,
+            "\\'",
+          )}'''\n`;
         }
       }
     }
-    fs.writeFileSync(config.envFile, env_string);
+    await writeFileWithLock(config.envFile, env_string);
+    await writeFileWithLock(config.jsEnvFile, js_env_string);
+    await writeFileWithLock(config.pyEnvFile, py_env_string);
   }
 }

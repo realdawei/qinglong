@@ -14,10 +14,14 @@ export enum NotificationMode {
   'aibotk' = 'aibotk',
   'iGot' = 'iGot',
   'pushPlus' = 'pushPlus',
+  'wePlusBot' = 'wePlusBot',
   'email' = 'email',
   'pushMe' = 'pushMe',
   'feishu' = 'feishu',
   'webhook' = 'webhook',
+  'chronocat' = 'Chronocat',
+  'ntfy' = 'ntfy',
+  'wxPusherBot' = 'wxPusherBot',
 }
 
 abstract class NotificationBaseInfo {
@@ -45,9 +49,8 @@ export class PushDeerNotification extends NotificationBaseInfo {
   public pushDeerUrl = '';
 }
 
-export class ChatNotification extends NotificationBaseInfo {
-  public chatUrl = '';
-  public chatToken = '';
+export class synologyChatNotification extends NotificationBaseInfo {
+  public synologyChatUrl = '';
 }
 
 export class BarkNotification extends NotificationBaseInfo {
@@ -57,6 +60,7 @@ export class BarkNotification extends NotificationBaseInfo {
   public barkGroup = 'qinglong';
   public barkLevel = 'active';
   public barkUrl = '';
+  public barkArchive = '';
 }
 
 export class TelegramBotNotification extends NotificationBaseInfo {
@@ -65,7 +69,7 @@ export class TelegramBotNotification extends NotificationBaseInfo {
   public telegramBotProxyHost = '';
   public telegramBotProxyPort = '';
   public telegramBotProxyAuth = '';
-  public telegramBotApiHost = 'api.telegram.org';
+  public telegramBotApiHost = 'https://api.telegram.org';
 }
 
 export class DingtalkBotNotification extends NotificationBaseInfo {
@@ -96,6 +100,17 @@ export class IGotNotification extends NotificationBaseInfo {
 export class PushPlusNotification extends NotificationBaseInfo {
   public pushPlusToken = '';
   public pushPlusUser = '';
+  public pushPlusTemplate = '';
+  public pushplusChannel = '';
+  public pushplusWebhook = '';
+  public pushplusCallbackUrl = '';
+  public pushplusTo = '';
+}
+
+export class WePlusBotNotification extends NotificationBaseInfo {
+  public wePlusBotToken = '';
+  public wePlusBotReceiver = '';
+  public wePlusBotVersion = '';
 }
 
 export class EmailNotification extends NotificationBaseInfo {
@@ -106,6 +121,13 @@ export class EmailNotification extends NotificationBaseInfo {
 
 export class PushMeNotification extends NotificationBaseInfo {
   public pushMeKey: string = '';
+  public pushMeUrl: string = '';
+}
+
+export class ChronocatNotification extends NotificationBaseInfo {
+  public chronocatURL: string = '';
+  public chronocatQQ: string = '';
+  public chronocatToken: string = '';
 }
 
 export class WebhookNotification extends NotificationBaseInfo {
@@ -123,12 +145,24 @@ export class LarkNotification extends NotificationBaseInfo {
   public larkKey = '';
 }
 
+export class NtfyNotification extends NotificationBaseInfo {
+  public ntfyUrl = '';
+  public ntfyTopic = '';
+  public ntfyPriority = '';
+}
+
+export class WxPusherBotNotification extends NotificationBaseInfo {
+  public wxPusherBotAppToken = '';
+  public wxPusherBotTopicIds = '';
+  public wxPusherBotUids = '';
+}
+
 export interface NotificationInfo
   extends GoCqHttpBotNotification,
     GotifyNotification,
     ServerChanNotification,
     PushDeerNotification,
-    ChatNotification,
+    synologyChatNotification,
     BarkNotification,
     TelegramBotNotification,
     DingtalkBotNotification,
@@ -137,7 +171,11 @@ export interface NotificationInfo
     AibotkNotification,
     IGotNotification,
     PushPlusNotification,
+    WePlusBotNotification,
     EmailNotification,
     PushMeNotification,
     WebhookNotification,
-    LarkNotification {}
+    ChronocatNotification,
+    LarkNotification,
+    NtfyNotification,
+    WxPusherBotNotification {}

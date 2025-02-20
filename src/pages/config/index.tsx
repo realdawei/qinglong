@@ -1,4 +1,4 @@
-import intl from 'react-intl-universal'
+import intl from 'react-intl-universal';
 import React, {
   PureComponent,
   Fragment,
@@ -15,6 +15,8 @@ import CodeMirror from '@uiw/react-codemirror';
 import { useOutletContext } from '@umijs/max';
 import { SharedContext } from '@/layouts';
 import { langs } from '@uiw/codemirror-extensions-langs';
+import { useHotkeys } from 'react-hotkeys-hook';
+import { getEditorMode } from '@/utils';
 
 const Config = () => {
   const { headerStyle, isPhone, theme } = useOutletContext<SharedContext>();
@@ -25,13 +27,16 @@ const Config = () => {
   const [data, setData] = useState<any[]>([]);
   const editorRef = useRef<any>(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
+  const [language, setLanguage] = useState<string>('shell');
 
   const getConfig = (name: string) => {
-    request.get(`${config.apiPrefix}configs/${name}`).then(({ code, data }) => {
-      if (code === 200) {
-        setValue(data);
-      }
-    });
+    request
+      .get(`${config.apiPrefix}configs/detail?path=${encodeURIComponent(name)}`)
+      .then(({ code, data }) => {
+        if (code === 200) {
+          setValue(data);
+        }
+      });
   };
 
   const getFiles = () => {
@@ -66,7 +71,17 @@ const Config = () => {
     setSelect(value);
     setTitle(node.value);
     getConfig(node.value);
+    const newMode = getEditorMode(value);
+    setLanguage(newMode);
   };
+
+  useHotkeys(
+    'mod+s',
+    (e) => {
+      updateConfig();
+    },
+    { enableOnFormTags: ['textarea'], preventDefault: true },
+  );
 
   useEffect(() => {
     getFiles();
@@ -113,7 +128,7 @@ const Config = () => {
         />
       ) : (
         <Editor
-          defaultLanguage="shell"
+          language={language}
           value={value}
           theme={theme}
           options={{
@@ -121,6 +136,7 @@ const Config = () => {
             lineNumbersMinChars: 3,
             folding: false,
             glyphMargin: false,
+            accessibilitySupport: 'off'
           }}
           onMount={(editor) => {
             editorRef.current = editor;

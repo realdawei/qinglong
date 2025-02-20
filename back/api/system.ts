@@ -1,12 +1,11 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { Container } from 'typedi';
 import { Logger } from 'winston';
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import config from '../config';
 import SystemService from '../services/system';
 import { celebrate, Joi } from 'celebrate';
 import UserService from '../services/user';
-import { EnvModel } from '../data/env';
 import {
   getUniqPath,
   handleLogPath,
@@ -34,7 +33,7 @@ export default (app: Router) => {
     const logger: Logger = Container.get('logger');
     try {
       const userService = Container.get(UserService);
-      const authInfo = await userService.getUserInfo();
+      const authInfo = await userService.getAuthInfo();
       const { version, changeLog, changeLogLink, publishTime } =
         await parseVersion(config.versionFile);
 
@@ -78,19 +77,107 @@ export default (app: Router) => {
   );
 
   route.put(
-    '/config',
+    '/config/log-remove-frequency',
     celebrate({
       body: Joi.object({
-        logRemoveFrequency: Joi.number().optional().allow(null),
-        cronConcurrency: Joi.number().optional().allow(null),
+        logRemoveFrequency: Joi.number().allow(null),
       }),
     }),
     async (req: Request, res: Response, next: NextFunction) => {
-      const logger: Logger = Container.get('logger');
       try {
         const systemService = Container.get(SystemService);
-        const result = await systemService.updateSystemConfig(req.body);
+        const result = await systemService.updateLogRemoveFrequency(req.body);
         res.send(result);
+      } catch (e) {
+        return next(e);
+      }
+    },
+  );
+
+  route.put(
+    '/config/cron-concurrency',
+    celebrate({
+      body: Joi.object({
+        cronConcurrency: Joi.number().allow(null),
+      }),
+    }),
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const systemService = Container.get(SystemService);
+        const result = await systemService.updateCronConcurrency(req.body);
+        res.send(result);
+      } catch (e) {
+        return next(e);
+      }
+    },
+  );
+
+  route.put(
+    '/config/dependence-proxy',
+    celebrate({
+      body: Joi.object({
+        dependenceProxy: Joi.string().allow('').allow(null),
+      }),
+    }),
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const systemService = Container.get(SystemService);
+        const result = await systemService.updateDependenceProxy(req.body);
+        res.send(result);
+      } catch (e) {
+        return next(e);
+      }
+    },
+  );
+
+  route.put(
+    '/config/node-mirror',
+    celebrate({
+      body: Joi.object({
+        nodeMirror: Joi.string().allow('').allow(null),
+      }),
+    }),
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const systemService = Container.get(SystemService);
+        res.setHeader('Content-type', 'application/octet-stream');
+        await systemService.updateNodeMirror(req.body, res);
+      } catch (e) {
+        return next(e);
+      }
+    },
+  );
+
+  route.put(
+    '/config/python-mirror',
+    celebrate({
+      body: Joi.object({
+        pythonMirror: Joi.string().allow('').allow(null),
+      }),
+    }),
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const systemService = Container.get(SystemService);
+        const result = await systemService.updatePythonMirror(req.body);
+        res.send(result);
+      } catch (e) {
+        return next(e);
+      }
+    },
+  );
+
+  route.put(
+    '/config/linux-mirror',
+    celebrate({
+      body: Joi.object({
+        linuxMirror: Joi.string().allow('').allow(null),
+      }),
+    }),
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const systemService = Container.get(SystemService);
+        res.setHeader('Content-type', 'application/octet-stream');
+        await systemService.updateLinuxMirror(req.body, res);
       } catch (e) {
         return next(e);
       }
@@ -129,7 +216,7 @@ export default (app: Router) => {
     '/reload',
     celebrate({
       body: Joi.object({
-        type: Joi.string().required(),
+        type: Joi.string().optional().allow('').allow(null),
       }),
     }),
     async (req: Request, res: Response, next: NextFunction) => {
@@ -174,7 +261,7 @@ export default (app: Router) => {
     async (req: Request, res: Response, next: NextFunction) => {
       try {
         const systemService = Container.get(SystemService);
-        const command = req.body.command
+        const command = req.body.command;
         const idStr = `cat ${config.crontabFile} | grep -E "${command}" | perl -pe "s|.*ID=(.*) ${command}.*|\\1|" | head -1 | awk -F " " '{print $1}' | xargs echo -n`;
         let id = await promiseExec(idStr);
         const uniqPath = await getUniqPath(command, id);
@@ -193,12 +280,12 @@ export default (app: Router) => {
             onError: async (message: string) => {
               res.write(`\n${message}`);
               const absolutePath = await handleLogPath(logPath);
-              fs.appendFileSync(absolutePath, `\n${message}`);
+              await fs.appendFile(absolutePath, `\n${message}`);
             },
             onLog: async (message: string) => {
               res.write(`\n${message}`);
               const absolutePath = await handleLogPath(logPath);
-              fs.appendFileSync(absolutePath, `\n${message}`);
+              await fs.appendFile(absolutePath, `\n${message}`);
             },
           },
         );
@@ -255,14 +342,58 @@ export default (app: Router) => {
 
   route.get(
     '/log',
+    celebrate({
+      query: {
+        startTime: Joi.string().allow('').optional(),
+        endTime: Joi.string().allow('').optional(),
+        t: Joi.string().optional(),
+      },
+    }),
     async (req: Request, res: Response, next: NextFunction) => {
       try {
         const systemService = Container.get(SystemService);
-        await systemService.getSystemLog(res);
+        await systemService.getSystemLog(
+          res,
+          req.query as {
+            startTime?: string;
+            endTime?: string;
+          },
+        );
       } catch (e) {
         return next(e);
       }
     },
   );
 
+  route.delete(
+    '/log',
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const systemService = Container.get(SystemService);
+        await systemService.deleteSystemLog();
+        res.send({ code: 200 });
+      } catch (e) {
+        return next(e);
+      }
+    },
+  );
+
+  route.put(
+    '/auth/reset',
+    celebrate({
+      body: Joi.object({
+        retries: Joi.number().optional(),
+        twoFactorActivated: Joi.boolean().optional(),
+      }),
+    }),
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const userService = Container.get(UserService);
+        await userService.resetAuthInfo(req.body);
+        res.send({ code: 200, message: '更新成功' });
+      } catch (e) {
+        return next(e);
+      }
+    },
+  );
 };

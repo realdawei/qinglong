@@ -9,11 +9,107 @@ import { Op } from 'sequelize';
 import config from '../config';
 import { CrontabViewModel, CronViewType } from '../data/cronView';
 import { initPosition } from '../data/env';
+import { AuthDataType, SystemModel } from '../data/system';
+import SystemService from '../services/system';
+import UserService from '../services/user';
+import { writeFile, readFile } from 'fs/promises';
+import { createRandomString, safeJSONParse } from '../config/util';
+import OpenService from '../services/open';
+import { shareStore } from '../shared/store';
+import Logger from './logger';
+import { AppModel } from '../data/open';
 
 export default async () => {
   const cronService = Container.get(CronService);
   const envService = Container.get(EnvService);
   const dependenceService = Container.get(DependenceService);
+  const systemService = Container.get(SystemService);
+  const userService = Container.get(UserService);
+  const openService = Container.get(OpenService);
+
+  // 初始化增加系统配置
+  let systemApp = (
+    await AppModel.findOne({
+      where: { name: 'system' },
+    })
+  )?.get({ plain: true });
+  if (!systemApp) {
+    systemApp = await AppModel.create({
+      name: 'system',
+      scopes: ['crons', 'system'],
+      client_id: createRandomString(12, 12),
+      client_secret: createRandomString(24, 24),
+    });
+  }
+  const [systemConfig] = await SystemModel.findOrCreate({
+    where: { type: AuthDataType.systemConfig },
+  });
+  await SystemModel.findOrCreate({
+    where: { type: AuthDataType.notification },
+  });
+  const [authConfig] = await SystemModel.findOrCreate({
+    where: { type: AuthDataType.authConfig },
+  });
+  if (!authConfig?.info) {
+    let authInfo = {
+      username: 'admin',
+      password: 'admin',
+    };
+    try {
+      const content = await readFile(config.authConfigFile, 'utf8');
+      authInfo = safeJSONParse(content);
+    } catch (error) {
+      Logger.warn('Failed to read auth config file, using default credentials');
+    }
+    await SystemModel.upsert({
+      id: authConfig?.id,
+      info: authInfo,
+      type: AuthDataType.authConfig,
+    });
+  }
+
+  const installDependencies = () => {
+    // 初始化时安装所有处于安装中，安装成功，安装失败的依赖
+    DependenceModel.findAll({
+      where: {},
+      order: [
+        ['type', 'DESC'],
+        ['createdAt', 'DESC'],
+      ],
+      raw: true,
+    }).then(async (docs) => {
+      await DependenceModel.update(
+        { status: DependenceStatus.queued, log: [] },
+        { where: { id: docs.map((x) => x.id!) } },
+      );
+      setTimeout(() => {
+        dependenceService.installDependenceOneByOne(docs);
+      }, 5000);
+    });
+  };
+
+  // 初始化更新 linux/python/nodejs 镜像源配置
+  if (systemConfig.info?.pythonMirror) {
+    systemService.updatePythonMirror({
+      pythonMirror: systemConfig.info?.pythonMirror,
+    });
+  }
+  if (systemConfig.info?.linuxMirror) {
+    systemService.updateLinuxMirror(
+      {
+        linuxMirror: systemConfig.info?.linuxMirror,
+      },
+      undefined,
+      () => installDependencies(),
+    );
+  } else {
+    installDependencies();
+  }
+  if (systemConfig.info?.nodeMirror) {
+    systemService.updateNodeMirror({
+      nodeMirror: systemConfig.info?.nodeMirror,
+    });
+  }
 
   // 初始化新增默认全部任务视图
   CrontabViewModel.findAll({
@@ -31,22 +127,6 @@ export default async () => {
 
   // 初始化更新所有任务状态为空闲
   await CrontabModel.update({ status: CrontabStatus.idle }, { where: {} });
-
-  // 初始化时安装所有处于安装中，安装成功，安装失败的依赖
-  DependenceModel.findAll({
-    where: {},
-    order: [
-      ['type', 'DESC'],
-      ['createdAt', 'DESC'],
-    ],
-    raw: true,
-  }).then(async (docs) => {
-    await DependenceModel.update(
-      { status: DependenceStatus.queued, log: [] },
-      { where: { id: docs.map((x) => x.id!) } },
-    );
-    dependenceService.installDependenceOneByOne(docs);
-  });
 
   // 初始化时执行一次所有的 ql repo 任务
   CrontabModel.findAll({
@@ -90,7 +170,7 @@ export default async () => {
         if (doc.command.includes(`${config.rootPath}/log/`)) {
           await CrontabModel.update(
             {
-              command: `${config.rootPath}/data/log/${doc.command.replace(
+              command: `${config.dataPath}/log/${doc.command.replace(
                 `${config.rootPath}/log/`,
                 '',
               )}`,
@@ -101,7 +181,7 @@ export default async () => {
         if (doc.command.includes(`${config.rootPath}/config/`)) {
           await CrontabModel.update(
             {
-              command: `${config.rootPath}/data/config/${doc.command.replace(
+              command: `${config.dataPath}/config/${doc.command.replace(
                 `${config.rootPath}/config/`,
                 '',
               )}`,
@@ -112,7 +192,7 @@ export default async () => {
         if (doc.command.includes(`${config.rootPath}/db/`)) {
           await CrontabModel.update(
             {
-              command: `${config.rootPath}/data/db/${doc.command.replace(
+              command: `${config.dataPath}/db/${doc.command.replace(
                 `${config.rootPath}/db/`,
                 '',
               )}`,
@@ -127,4 +207,11 @@ export default async () => {
   // 初始化保存一次ck和定时任务数据
   await cronService.autosave_crontab();
   await envService.set_envs();
+
+  const authInfo = await userService.getAuthInfo();
+  const apps = await openService.findApps();
+  await shareStore.updateAuthInfo(authInfo);
+  if (apps?.length) {
+    await shareStore.updateApps(apps);
+  }
 };

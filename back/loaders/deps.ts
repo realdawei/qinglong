@@ -1,20 +1,19 @@
 import path from 'path';
-import fs from 'fs';
+import fs from 'fs/promises';
 import chokidar from 'chokidar';
 import config from '../config/index';
-import { promiseExec } from '../config/util';
+import { fileExist, promiseExec, rmPath } from '../config/util';
 
-function linkToNodeModule(src: string, dst?: string) {
+async function linkToNodeModule(src: string, dst?: string) {
   const target = path.join(config.rootPath, 'node_modules', dst || src);
   const source = path.join(config.rootPath, src);
 
-  fs.lstat(target, (err, stat) => {
-    if (!stat) {
-      fs.symlink(source, target, 'dir', (err) => {
-        if (err) throw err;
-      });
+  try {
+    const stats = await fs.lstat(target);
+    if (!stats) {
+      await fs.symlink(source, target, 'dir');
     }
-  });
+  } catch (error) {}
 }
 
 async function linkCommand() {
@@ -24,26 +23,27 @@ async function linkCommand() {
     {
       src: 'update.sh',
       dest: 'ql',
+      tmp: 'ql_tmp',
     },
     {
       src: 'task.sh',
       dest: 'task',
+      tmp: 'task_tmp',
     },
   ];
 
   for (const link of linkShell) {
     const source = path.join(config.rootPath, 'shell', link.src);
     const target = path.join(commandDir, link.dest);
-    if (fs.existsSync(target)) {
-      fs.unlinkSync(target);
-    }
-    fs.symlink(source, target, (err) => { });
+    const tmpTarget = path.join(commandDir, link.tmp);
+    await fs.symlink(source, tmpTarget);
+    await fs.rename(tmpTarget, target);
   }
 }
 
 export default async (src: string = 'deps') => {
   await linkCommand();
-  linkToNodeModule(src);
+  await linkToNodeModule(src);
 
   const source = path.join(config.rootPath, src);
   const watcher = chokidar.watch(source, {

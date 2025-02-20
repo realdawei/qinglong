@@ -8,6 +8,13 @@
     url('../assets/fonts/SourceCodePro-Regular.ttf') format('truetype');
 }
 
+@font-face {
+  font-family: Log;
+  src: url('../assets/fonts/log.woff2') format('woff2'),
+    url('../assets/fonts/log.woff') format('woff'),
+    url('../assets/fonts/log.ttf') format('truetype');
+}
+
 body {
   // 禁止手机页面下拉刷新
   overflow: hidden;
@@ -24,9 +31,13 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
+.ant-modal-header {
+  padding-right: 54px;
+}
+
 .ant-modal-body {
-  max-height: calc(90vh - 110px);
-  max-height: calc(90vh - var(--vh-offset, 110px));
+  max-height: calc(80vh - 110px);
+  max-height: calc(80vh - var(--vh-offset, 110px));
   overflow-y: auto;
 }
 
@@ -48,6 +59,11 @@ body {
       width: 100%;
       padding: 24px;
       overflow-y: auto;
+      code,
+      span {
+        font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo,
+          Courier, monospace, Log;
+      }
     }
   }
 
@@ -57,6 +73,10 @@ body {
     margin-bottom: 0;
     overflow: hidden;
   }
+}
+
+.ͼ1 .cm-scroller {
+  font-family: monospace, Log;
 }
 
 .monaco-editor:not(.rename-box) {
@@ -181,6 +201,7 @@ body {
       .react-codemirror2,
       .CodeMirror {
         height: 100%;
+        overflow: auto;
       }
     }
   }
@@ -456,4 +477,9 @@ body[data-dark='true'] {
   .ant-popover-arrow-content {
     --antd-arrow-background-color: rgb(24, 26, 27);
   }
+}
+
+.ant-tabs-content-holder {
+  flex: 1;
+  overflow-y: auto;
 }

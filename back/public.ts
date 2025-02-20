@@ -8,6 +8,7 @@ const app = express();
 const client = new HealthClient(
   `0.0.0.0:${config.cronPort}`,
   credentials.createInsecure(),
+  { 'grpc.enable_http_proxy': 0 },
 );
 
 app.get('/api/health', (req, res) => {
@@ -20,8 +21,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app
-  .listen(config.publicPort, async () => {
-    await require('./loaders/sentry').default({ expressApp: app });
+  .listen(config.publicPort, '0.0.0.0', async () => {
     await require('./loaders/db').default();
 
     Logger.debug(`✌️ 公共服务启动成功！`);

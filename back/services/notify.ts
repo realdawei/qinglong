@@ -1,12 +1,11 @@
-import { NotificationInfo } from '../data/notify';
-import { Service, Inject } from 'typedi';
-import winston from 'winston';
-import UserService from './user';
-import got from 'got';
-import nodemailer from 'nodemailer';
 import crypto from 'crypto';
+import got from 'got';
 import { HttpProxyAgent, HttpsProxyAgent } from 'hpagent';
+import nodemailer from 'nodemailer';
+import { Inject, Service } from 'typedi';
 import { parseBody, parseHeaders } from '../config/util';
+import { NotificationInfo } from '../data/notify';
+import UserService from './user';
 
 @Service()
 export default class NotificationService {
@@ -27,10 +26,14 @@ export default class NotificationService {
     ['aibotk', this.aibotk],
     ['iGot', this.iGot],
     ['pushPlus', this.pushPlus],
+    ['wePlusBot', this.wePlusBot],
     ['email', this.email],
     ['pushMe', this.pushMe],
     ['webhook', this.webhook],
     ['lark', this.lark],
+    ['chronocat', this.chronocat],
+    ['ntfy', this.ntfy],
+    ['wxPusherBot', this.wxPusherBot],
   ]);
 
   private title = '';
@@ -41,7 +44,7 @@ export default class NotificationService {
     retry: 1,
   };
 
-  constructor(@Inject('logger') private logger: winston.Logger) {}
+  constructor() {}
 
   public async notify(
     title: string,
@@ -56,7 +59,7 @@ export default class NotificationService {
       try {
         return await notificationModeAction?.call(this);
       } catch (error: any) {
-        return false;
+        throw error;
       }
     }
     return false;
@@ -126,14 +129,19 @@ export default class NotificationService {
 
   private async serverChan() {
     const { serverChanKey } = this.params;
-    const url = serverChanKey.startsWith('SCT')
-      ? `https://sctapi.ftqq.com/${serverChanKey}.send`
-      : `https://sc.ftqq.com/${serverChanKey}.send`;
+    const matchResult = serverChanKey.match(/^sctp(\d+)t/i);
+    const url =
+      matchResult && matchResult[1]
+        ? `https://${matchResult[1]}.push.ft07.com/send/${serverChanKey}.send`
+        : `https://sctapi.ftqq.com/${serverChanKey}.send`;
+
     try {
       const res: any = await got
         .post(url, {
           ...this.gotOption,
-          body: `title=${this.title}&desp=${this.content}`,
+          body: `title=${encodeURIComponent(
+            this.title,
+          )}&desp=${encodeURIComponent(this.content)}`,
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         })
         .json();
@@ -174,11 +182,10 @@ export default class NotificationService {
   }
 
   private async chat() {
-    const { chatUrl, chatToken } = this.params;
-    const url = `${chatUrl}${chatToken}`;
+    const { synologyChatUrl } = this.params;
     try {
       const res: any = await got
-        .post(url, {
+        .post(synologyChatUrl, {
           ...this.gotOption,
           body: `payload={"text":"${this.title}\n${this.content}"}`,
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -195,21 +202,35 @@ export default class NotificationService {
   }
 
   private async bark() {
-    let { barkPush, barkIcon, barkSound, barkGroup, barkLevel, barkUrl } = this.params;
+    let {
+      barkPush,
+      barkIcon = '',
+      barkSound = '',
+      barkGroup = '',
+      barkLevel = '',
+      barkUrl = '',
+      barkArchive = '',
+    } = this.params;
     if (!barkPush.startsWith('http')) {
       barkPush = `https://api.day.app/${barkPush}`;
     }
-    const url = `${barkPush}/${encodeURIComponent(
-      this.title,
-    )}/${encodeURIComponent(
-      this.content,
-    )}?icon=${barkIcon}&sound=${barkSound}&group=${barkGroup}&level=${barkLevel}&url=${barkUrl}`;
-
+    const url = `${barkPush}`;
+    const body = {
+      title: this.title,
+      body: this.content,
+      icon: barkIcon,
+      sound: barkSound,
+      group: barkGroup,
+      isArchive: barkArchive,
+      level: barkLevel,
+      url: barkUrl,
+    };
     try {
       const res: any = await got
-        .get(url, {
+        .post(url, {
           ...this.gotOption,
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          json: body,
+          headers: { 'Content-Type': 'application/json' },
         })
         .json();
       if (res.code === 200) {
@@ -232,8 +253,8 @@ export default class NotificationService {
       telegramBotUserId,
     } = this.params;
     const authStr = telegramBotProxyAuth ? `${telegramBotProxyAuth}@` : '';
-    const url = `https://${
-      telegramBotApiHost ? telegramBotApiHost : 'api.telegram.org'
+    const url = `${
+      telegramBotApiHost ? telegramBotApiHost : 'https://api.telegram.org'
     }/bot${telegramBotToken}/sendMessage`;
     let agent;
     if (telegramBotProxyHost && telegramBotProxyPort) {
@@ -480,17 +501,66 @@ export default class NotificationService {
   }
 
   private async pushPlus() {
-    const { pushPlusToken, pushPlusUser } = this.params;
+    const {
+      pushPlusToken,
+      pushPlusUser,
+      pushplusWebhook,
+      pushPlusTemplate,
+      pushplusChannel,
+      pushplusCallbackUrl,
+      pushplusTo,
+    } = this.params;
     const url = `https://www.pushplus.plus/send`;
+    try {
+      let body = {
+        ...this.gotOption,
+        json: {
+          token: `${pushPlusToken}`,
+          title: `${this.title}`,
+          content: `${this.content.replace(/[\n\r]/g, '<br>')}`,
+          topic: `${pushPlusUser || ''}`,
+          template: `${pushPlusTemplate || 'html'}`,
+          channel: `${pushplusChannel || 'wechat'}`,
+          webhook: `${pushplusWebhook || ''}`,
+          callbackUrl: `${pushplusCallbackUrl || ''}`,
+          to: `${pushplusTo || ''}`,
+        },
+      };
+
+      const res: any = await got.post(url, body).json();
+
+      if (res.code === 200) {
+        return true;
+      } else {
+        throw new Error(JSON.stringify(res));
+      }
+    } catch (error: any) {
+      throw new Error(error.response ? error.response.body : error);
+    }
+  }
+
+  private async wePlusBot() {
+    const { wePlusBotToken, wePlusBotReceiver, wePlusBotVersion } = this.params;
+
+    let content = this.content;
+    let template = 'txt';
+    if (this.content.length > 800) {
+      template = 'html';
+      content = content.replace(/[\n\r]/g, '<br>');
+    }
+
+    const url = `https://www.weplusbot.com/send`;
     try {
       const res: any = await got
         .post(url, {
           ...this.gotOption,
           json: {
-            token: `${pushPlusToken}`,
+            token: `${wePlusBotToken}`,
             title: `${this.title}`,
-            content: `${this.content.replace(/[\n\r]/g, '<br>')}`,
-            topic: `${pushPlusUser || ''}`,
+            template: `${template}`,
+            content: `${content}`,
+            receiver: `${wePlusBotReceiver || ''}`,
+            version: `${wePlusBotVersion || 'pro'}`,
           },
         })
         .json();
@@ -523,7 +593,7 @@ export default class NotificationService {
           headers: { 'Content-Type': 'application/json' },
         })
         .json();
-      if (res.StatusCode === 0) {
+      if (res.StatusCode === 0 || res.code === 0) {
         return true;
       } else {
         throw new Error(JSON.stringify(res));
@@ -560,29 +630,163 @@ export default class NotificationService {
         throw new Error(JSON.stringify(info));
       }
     } catch (error: any) {
-      throw new Error(error.response ? error.response.body : error);
+      throw error;
     }
   }
 
   private async pushMe() {
-    const { pushMeKey } = this.params;
+    const { pushMeKey, pushMeUrl } = this.params;
     try {
-      const res: any = await got.post(
-        `https://push.i-i.me/?push_key=${pushMeKey}`,
-        {
-          ...this.gotOption,
-          json: {
-            title: this.title,
-            content: this.content,
-          },
-          headers: { 'Content-Type': 'application/json' },
+      const res: any = await got.post(pushMeUrl || 'https://push.i-i.me/', {
+        ...this.gotOption,
+        json: {
+          push_key: pushMeKey,
+          title: this.title,
+          content: this.content,
         },
-      );
+        headers: { 'Content-Type': 'application/json' },
+      });
       if (res.body === 'success') {
         return true;
       } else {
         throw new Error(res.body);
       }
+    } catch (error: any) {
+      throw new Error(error.response ? error.response.body : error);
+    }
+  }
+
+  private async ntfy() {
+    const { ntfyUrl, ntfyTopic, ntfyPriority } = this.params;
+    // 编码函数
+    const encodeRfc2047 = (text: string, charset: string = 'UTF-8'): string => {
+      const encodedText = Buffer.from(text).toString('base64');
+      return `=?${charset}?B?${encodedText}?=`;
+    };
+    try {
+      const encodedTitle = encodeRfc2047(this.title);
+      const res: any = await got.post(
+        `${ntfyUrl || 'https://ntfy.sh'}/${ntfyTopic}`,
+        {
+          ...this.gotOption,
+          body: `${this.content}`,
+          headers: { Title: encodedTitle, Priority: `${ntfyPriority || '3'}` },
+        },
+      );
+      if (res.statusCode === 200) {
+        return true;
+      } else {
+        throw new Error(JSON.stringify(res));
+      }
+    } catch (error: any) {
+      throw new Error(error.response ? error.response.body : error);
+    }
+  }
+
+  private async wxPusherBot() {
+    const { wxPusherBotAppToken, wxPusherBotTopicIds, wxPusherBotUids } =
+      this.params;
+    // 处理 topicIds，将分号分隔的字符串转为数组
+    const topicIds = wxPusherBotTopicIds
+      ? wxPusherBotTopicIds
+          .split(';')
+          .map((id) => id.trim())
+          .filter((id) => id)
+          .map((id) => parseInt(id))
+      : [];
+
+    // 处理 uids，将分号分隔的字符串转为数组
+    const uids = wxPusherBotUids
+      ? wxPusherBotUids
+          .split(';')
+          .map((uid) => uid.trim())
+          .filter((uid) => uid)
+      : [];
+
+    // topic_ids 和 uids 至少要有一个
+    if (!topicIds.length && !uids.length) {
+      throw new Error('wxPusher 服务的 TopicIds 和 Uids 至少配置一个才行');
+    }
+
+    const url = `https://wxpusher.zjiecode.com/api/send/message`;
+    try {
+      const res: any = await got
+        .post(url, {
+          ...this.gotOption,
+          json: {
+            appToken: wxPusherBotAppToken,
+            content: `<h1>${this.title}</h1><br/><div style='white-space: pre-wrap;'>${this.content}</div>`,
+            summary: this.title,
+            contentType: 2,
+            topicIds: topicIds,
+            uids: uids,
+            verifyPayType: 0,
+          },
+        })
+        .json();
+
+      if (res.code === 1000) {
+        return true;
+      } else {
+        throw new Error(JSON.stringify(res));
+      }
+    } catch (error: any) {
+      throw new Error(error.response ? error.response.body : error);
+    }
+  }
+
+  private async chronocat() {
+    const { chronocatURL, chronocatQQ, chronocatToken } = this.params;
+    try {
+      const user_ids = chronocatQQ
+        .match(/user_id=(\d+)/g)
+        ?.map((match: any) => match.split('=')[1]);
+      const group_ids = chronocatQQ
+        .match(/group_id=(\d+)/g)
+        ?.map((match: any) => match.split('=')[1]);
+
+      const url = `${chronocatURL}/api/message/send`;
+      const headers = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${chronocatToken}`,
+      };
+
+      for (const [chat_type, ids] of [
+        [1, user_ids],
+        [2, group_ids],
+      ]) {
+        if (!ids) {
+          continue;
+        }
+        let _ids: any = ids;
+        for (const chat_id of _ids) {
+          const data = {
+            peer: {
+              chatType: chat_type,
+              peerUin: chat_id,
+            },
+            elements: [
+              {
+                elementType: 1,
+                textElement: {
+                  content: `${this.title}\n\n${this.content}`,
+                },
+              },
+            ],
+          };
+          const res: any = await got.post(url, {
+            ...this.gotOption,
+            json: data,
+            headers,
+          });
+          if (res.statusCode === 200) {
+            return true;
+          } else {
+            throw new Error(res.body);
+          }
+        }
+      }
+      return false;
     } catch (error: any) {
       throw new Error(error.response ? error.response.body : error);
     }
@@ -597,15 +801,14 @@ export default class NotificationService {
       webhookContentType,
     } = this.params;
 
-    const { formatBody, formatUrl } = this.formatNotifyContent(
-      webhookUrl,
-      webhookBody,
-    );
-    if (!formatUrl && !formatBody) {
-      return false;
+    if (!webhookUrl.includes('$title') && !webhookBody.includes('$title')) {
+      throw new Error('Url 或者 Body 中必须包含 $title');
     }
+
     const headers = parseHeaders(webhookHeaders);
-    const body = parseBody(formatBody, webhookContentType);
+    const body = parseBody(webhookBody, webhookContentType, (v) =>
+      v?.replaceAll('$title', this.title)?.replaceAll('$content', this.content),
+    );
     const bodyParam = this.formatBody(webhookContentType, body);
     const options = {
       method: webhookMethod,
@@ -615,6 +818,9 @@ export default class NotificationService {
       ...bodyParam,
     };
     try {
+      const formatUrl = webhookUrl
+        ?.replaceAll('$title', encodeURIComponent(this.title))
+        ?.replaceAll('$content', encodeURIComponent(this.content));
       const res = await got(formatUrl, options);
       if (String(res.statusCode).startsWith('20')) {
         return true;
@@ -634,23 +840,9 @@ export default class NotificationService {
       case 'multipart/form-data':
         return { form: body };
       case 'application/x-www-form-urlencoded':
+      case 'text/plain':
         return { body };
     }
     return {};
-  }
-
-  private formatNotifyContent(url: string, body: string) {
-    if (!url.includes('$title') && !body.includes('$title')) {
-      return {};
-    }
-
-    return {
-      formatUrl: url
-        ?.replaceAll('$title', encodeURIComponent(this.title))
-        ?.replaceAll('$content', encodeURIComponent(this.content)),
-      formatBody: body
-        ?.replaceAll('$title', this.title)
-        ?.replaceAll('$content', this.content),
-    };
   }
 }

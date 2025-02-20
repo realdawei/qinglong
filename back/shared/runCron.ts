@@ -1,12 +1,17 @@
 import { spawn } from 'cross-spawn';
 import taskLimit from './pLimit';
 import Logger from '../loaders/logger';
+import { ICron } from '../protos/cron';
 
-export function runCron(cmd: string): Promise<number> {
-  return taskLimit.runWithCpuLimit(() => {
+export function runCron(cmd: string, cron: ICron): Promise<number | void> {
+  return taskLimit.runWithCronLimit(cron, () => {
     return new Promise(async (resolve: any) => {
-      Logger.info(`[schedule][开始执行任务] 运行命令: ${cmd}`);
-
+      Logger.info(
+        `[schedule][开始执行任务] 参数 ${JSON.stringify({
+          ...cron,
+          command: cmd,
+        })}`,
+      );
       const cp = spawn(cmd, { shell: '/bin/bash' });
 
       cp.stderr.on('data', (data) => {
@@ -24,9 +29,17 @@ export function runCron(cmd: string): Promise<number> {
         );
       });
 
-      cp.on('close', async (code) => {
-        Logger.info(`[schedule][任务退出] ${cmd} 进程id: ${cp.pid} 退出, 退出码 ${code}`);
-        resolve();
+      cp.on('exit', async (code) => {
+        taskLimit.removeQueuedCron(cron.id);
+        Logger.info(
+          '[schedule][执行任务结束] 参数: %s, 退出码: %j',
+          JSON.stringify({
+            ...cron,
+            command: cmd,
+          }),
+          code,
+        );
+        resolve({ ...cron, command: cmd, pid: cp.pid, code });
       });
     });
   });

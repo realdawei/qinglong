@@ -21,19 +21,24 @@ import './index.less';
 import { UploadOutlined } from '@ant-design/icons';
 import Countdown from 'antd/lib/statistic/Countdown';
 import useProgress from './progress';
+import pick from 'lodash/pick';
+import { disableBody } from '@/utils';
+
+const dataMap = {
+  'log-remove-frequency': 'logRemoveFrequency',
+  'cron-concurrency': 'cronConcurrency',
+};
 
 const Other = ({
   systemInfo,
-  socketMessage,
   reloadTheme,
-}: Pick<SharedContext, 'socketMessage' | 'reloadTheme' | 'systemInfo'>) => {
+}: Pick<SharedContext, 'reloadTheme' | 'systemInfo'>) => {
   const defaultTheme = localStorage.getItem('qinglong_dark_theme') || 'auto';
   const [systemConfig, setSystemConfig] = useState<{
     logRemoveFrequency?: number | null;
     cronConcurrency?: number | null;
   }>();
   const [form] = Form.useForm();
-  const modalRef = useRef<any>();
   const [exportLoading, setExportLoading] = useState(false);
   const showUploadProgress = useProgress(intl.get('上传'));
   const showDownloadProgress = useProgress(intl.get('下载'));
@@ -81,9 +86,12 @@ const Other = ({
       });
   };
 
-  const updateSystemConfig = () => {
+  const updateSystemConfig = (path: keyof typeof dataMap) => {
     request
-      .put(`${config.apiPrefix}system/config`, systemConfig)
+      .put(
+        `${config.apiPrefix}system/config/${path}`,
+        pick(systemConfig, dataMap[path]),
+      )
       .then(({ code, data }) => {
         if (code === 200) {
           message.success(intl.get('更新成功'));
@@ -125,11 +133,16 @@ const Other = ({
       maskClosable: false,
       title: intl.get('确认重启'),
       centered: true,
-      content: intl.get('备份数据上传成功，确认覆盖数据'),
+      content: (
+        <>
+          <div>{intl.get('备份数据上传成功，确认覆盖数据')}</div>
+          <div>{intl.get('如果恢复失败，可进入容器执行')} ql reload data</div>
+        </>
+      ),
       okText: intl.get('重启'),
       onOk() {
         request
-          .put(`${config.apiPrefix}system/reload`, { type: 'data' })
+          .put(`${config.apiPrefix}update/data`)
           .then(() => {
             message.success({
               content: (
@@ -145,6 +158,7 @@ const Other = ({
               ),
               duration: 30,
             });
+            disableBody();
             setTimeout(() => {
               window.location.reload();
             }, 30000);
@@ -208,7 +222,9 @@ const Other = ({
           />
           <Button
             type="primary"
-            onClick={updateSystemConfig}
+            onClick={() => {
+              updateSystemConfig('log-remove-frequency');
+            }}
             style={{ width: 84 }}
           >
             {intl.get('确认')}
@@ -227,7 +243,9 @@ const Other = ({
           />
           <Button
             type="primary"
-            onClick={updateSystemConfig}
+            onClick={() => {
+              updateSystemConfig('cron-concurrency');
+            }}
             style={{ width: 84 }}
           >
             {intl.get('确认')}
@@ -254,13 +272,19 @@ const Other = ({
           method="put"
           showUploadList={false}
           maxCount={1}
-          action="/api/system/data/import"
-          onChange={(e) => {
-            if (e.event?.percent) {
-              showUploadProgress(parseFloat(e.event?.percent.toFixed(1)));
-              if (e.event?.percent === 100) {
-                showReloadModal();
-              }
+          action={`${config.apiPrefix}system/data/import`}
+          onChange={({ file, event }) => {
+            if (event?.percent) {
+              showUploadProgress(
+                Math.min(parseFloat(event?.percent.toFixed(1)), 99),
+              );
+            }
+            if (file.status === 'done') {
+              showUploadProgress(100);
+              showReloadModal();
+            }
+            if (file.status === 'error') {
+              message.error('上传失败');
             }
           }}
           name="data"
@@ -274,7 +298,7 @@ const Other = ({
         </Upload>
       </Form.Item>
       <Form.Item label={intl.get('检查更新')} name="update">
-        <CheckUpdate systemInfo={systemInfo} socketMessage={socketMessage} />
+        <CheckUpdate systemInfo={systemInfo} />
       </Form.Item>
     </Form>
   );

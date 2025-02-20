@@ -2,13 +2,13 @@ import { sequelize } from '.';
 import { DataTypes, Model, ModelDefined } from 'sequelize';
 import { NotificationInfo } from './notify';
 
-export class AuthInfo {
+export class SystemInfo {
   ip?: string;
   type: AuthDataType;
-  info?: AuthModelInfo;
+  info?: SystemModelInfo;
   id?: number;
 
-  constructor(options: AuthInfo) {
+  constructor(options: SystemInfo) {
     this.ip = options.ip;
     this.info = options.info;
     this.type = options.type;
@@ -27,11 +27,16 @@ export enum AuthDataType {
   'notification' = 'notification',
   'removeLogFrequency' = 'removeLogFrequency',
   'systemConfig' = 'systemConfig',
+  'authConfig' = 'authConfig',
 }
 
 export interface SystemConfigInfo {
   logRemoveFrequency?: number;
   cronConcurrency?: number;
+  dependenceProxy?: string;
+  nodeMirror?: string;
+  pythonMirror?: string;
+  linuxMirror?: string;
 }
 
 export interface LoginLogInfo {
@@ -42,12 +47,31 @@ export interface LoginLogInfo {
   status?: LoginStatus;
 }
 
-export type AuthModelInfo = SystemConfigInfo &
-  Partial<NotificationInfo> &
-  LoginLogInfo;
+export interface AuthInfo {
+  username: string;
+  password: string;
+  retries: number;
+  lastlogon: number;
+  lastip: string;
+  lastaddr: string;
+  platform: string;
+  isTwoFactorChecking: boolean;
+  token: string;
+  tokens: Record<string, string>;
+  twoFactorActivated: boolean;
+  twoFactorSecret: string;
+  avatar: string;
+}
 
-export interface AuthInstance extends Model<AuthInfo, AuthInfo>, AuthInfo {}
-export const AuthModel = sequelize.define<AuthInstance>('Auth', {
+export type SystemModelInfo = SystemConfigInfo &
+  Partial<NotificationInfo> &
+  LoginLogInfo &
+  Partial<AuthInfo>;
+
+export interface SystemInstance
+  extends Model<SystemInfo, SystemInfo>,
+    SystemInfo {}
+export const SystemModel = sequelize.define<SystemInstance>('Auth', {
   ip: DataTypes.STRING,
   type: DataTypes.STRING,
   info: {

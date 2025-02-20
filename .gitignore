@@ -22,11 +22,8 @@
 .env
 .history
 .version.ts
-
-/config
-/log
-/db
-/manual_log
-/scripts
-/bak
 /.tmp
+__pycache__
+/shell/preload/env.*
+/shell/preload/notify.*
+/shell/preload/*-notify.json

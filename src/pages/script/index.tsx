@@ -44,14 +44,14 @@ import uniq from 'lodash/uniq';
 import IconFont from '@/components/iconfont';
 import RenameModal from './renameModal';
 import { langs } from '@uiw/codemirror-extensions-langs';
-
+import { useHotkeys } from 'react-hotkeys-hook';
+import prettyBytes from 'pretty-bytes';
 const { Text } = Typography;
 
 const Script = () => {
-  const { headerStyle, isPhone, theme, socketMessage } =
-    useOutletContext<SharedContext>();
+  const { headerStyle, isPhone, theme } = useOutletContext<SharedContext>();
   const [value, setValue] = useState(intl.get('请选择脚本文件'));
-  const [select, setSelect] = useState<string>('');
+  const [select, setSelect] = useState<string>(intl.get('请选择脚本文件'));
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState('');
@@ -84,9 +84,9 @@ const Script = () => {
   const getDetail = (node: any) => {
     request
       .get(
-        `${config.apiPrefix}scripts/${encodeURIComponent(node.title)}?path=${
-          node.parent || ''
-        }`,
+        `${config.apiPrefix}scripts/detail?file=${encodeURIComponent(
+          node.title,
+        )}&path=${node.parent || ''}`,
       )
       .then(({ code, data }) => {
         if (code === 200) {
@@ -108,6 +108,7 @@ const Script = () => {
       };
       const item = findNode(_data, (c) => c.key === obj.node.key);
       if (item) {
+        obj.node = item;
         setExpandedKeys([p as string]);
         onTreeSelect([vkey], obj);
       }
@@ -115,12 +116,12 @@ const Script = () => {
   };
 
   const onSelect = (value: any, node: any) => {
-    setSelect(node.key);
-    setCurrentNode(node);
-
     if (node.key === select || !value) {
       return;
     }
+
+    setSelect(node.key);
+    setCurrentNode(node);
 
     if (node.type === 'directory') {
       setValue(intl.get('请选择脚本文件'));
@@ -135,6 +136,10 @@ const Script = () => {
 
   const onTreeSelect = useCallback(
     (keys: Key[], e: any) => {
+      const node = e.node;
+      if (node.key === select && isEditing) {
+        return;
+      }
       const content = editorRef.current
         ? editorRef.current.getValue().replace(/\r\n/g, '\n')
         : value;
@@ -155,7 +160,7 @@ const Script = () => {
         onSelect(keys[0], e.node);
       }
     },
-    [value],
+    [value, select, isEditing],
   );
 
   const onSearch = useCallback(
@@ -187,6 +192,14 @@ const Script = () => {
     setExpandedKeys(expKeys);
   };
 
+  const onDoubleClick = (e: any, node: any) => {
+    if (node.type === 'file') {
+      setSelect(node.key);
+      setCurrentNode(node);
+      setIsEditing(true);
+    }
+  };
+
   const editFile = () => {
     setTimeout(() => {
       setIsEditing(true);
@@ -206,8 +219,9 @@ const Script = () => {
         <>
           {intl.get('确认保存文件')}
           <Text style={{ wordBreak: 'break-all' }} type="warning">
+            {' '}
             {currentNode.title}
-          </Text>{' '}
+          </Text>
           {intl.get('，保存后不可恢复')}
         </>
       ),
@@ -246,7 +260,8 @@ const Script = () => {
         <>
           {intl.get('确认删除')}
           <Text style={{ wordBreak: 'break-all' }} type="warning">
-            {select}
+            {' '}
+            {select}{' '}
           </Text>
           {intl.get('文件')}
           {currentNode.type === 'directory' ? intl.get('夹及其子文件') : ''}
@@ -352,7 +367,7 @@ const Script = () => {
   };
 
   const initState = () => {
-    setSelect('');
+    setSelect(intl.get('请选择脚本文件'));
     setCurrentNode(null);
     setValue(intl.get('请选择脚本文件'));
   };
@@ -363,9 +378,49 @@ const Script = () => {
 
   useEffect(() => {
     if (treeDom.current) {
-      setHeight(treeDom.current.clientHeight);
+      setHeight(treeDom.current.clientHeight - 6);
     }
   }, [treeDom.current, data]);
+
+  useHotkeys(
+    'mod+s',
+    (e) => {
+      if (isEditing) {
+        saveFile();
+      }
+    },
+    { enableOnFormTags: ['textarea'], preventDefault: true },
+  );
+
+  useHotkeys(
+    'mod+d',
+    (e) => {
+      if (currentNode.title) {
+        deleteFile();
+      }
+    },
+    { preventDefault: true },
+  );
+
+  useHotkeys(
+    'mod+o',
+    (e) => {
+      if (!isEditing) {
+        addFile();
+      }
+    },
+    { preventDefault: true },
+  );
+
+  useHotkeys(
+    'mod+e',
+    (e) => {
+      if (currentNode.title) {
+        cancelEdit();
+      }
+    },
+    { preventDefault: true },
+  );
 
   const action = (key: string | number) => {
     switch (key) {
@@ -441,7 +496,24 @@ const Script = () => {
   return (
     <PageContainer
       className="ql-container-wrapper log-wrapper"
-      title={select}
+      title={
+        <>
+          {select}
+          {currentNode?.type === 'file' && (
+            <span
+              style={{
+                marginLeft: 6,
+                fontSize: 12,
+                color: '#999',
+                display: 'inline-block',
+                height: 14,
+              }}
+            >
+              {prettyBytes(currentNode.size)}
+            </span>
+          )}
+        </>
+      }
       loading={loading}
       extra={
         isPhone
@@ -543,6 +615,7 @@ const Script = () => {
                       onExpand={onExpand}
                       showLine={{ showLeafIcon: true }}
                       onSelect={onTreeSelect}
+                      onDoubleClick={onDoubleClick}
                     ></Tree>
                   </div>
                 </>
@@ -571,6 +644,7 @@ const Script = () => {
                 fontSize: 12,
                 lineNumbersMinChars: 3,
                 glyphMargin: false,
+                accessibilitySupport: 'off',
               }}
               onMount={(editor) => {
                 editorRef.current = editor;
@@ -591,16 +665,17 @@ const Script = () => {
             }}
           />
         )}
-        <EditModal
-          visible={isLogModalVisible}
-          treeData={data}
-          currentNode={currentNode}
-          content={value}
-          socketMessage={socketMessage}
-          handleCancel={() => {
-            setIsLogModalVisible(false);
-          }}
-        />
+        {isLogModalVisible && (
+          <EditModal
+            visible={isLogModalVisible}
+            treeData={data}
+            currentNode={currentNode}
+            content={value}
+            handleCancel={() => {
+              setIsLogModalVisible(false);
+            }}
+          />
+        )}
         <EditScriptNameModal
           visible={isAddFileModalVisible}
           treeData={data}

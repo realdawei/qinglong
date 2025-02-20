@@ -41,6 +41,7 @@ import { SharedContext } from '@/layouts';
 import useTableScrollHeight from '@/hooks/useTableScrollHeight';
 import Copy from '../../components/copy';
 import { useVT } from 'virtualizedtableforantd4';
+import dayjs from 'dayjs';
 
 const { Paragraph } = Typography;
 const { Search } = Input;
@@ -82,6 +83,16 @@ const Env = () => {
       dataIndex: 'name',
       key: 'name',
       sorter: (a: any, b: any) => a.name.localeCompare(b.name),
+      render: (text: string, record: any) => {
+        return (
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <Tooltip title={text} placement="topLeft">
+              <div className="text-ellipsis">{text}</div>
+            </Tooltip>
+            <Copy text={text} />
+          </div>
+        );
+      },
     },
     {
       title: intl.get('值'),
@@ -127,13 +138,9 @@ const Env = () => {
         },
       },
       render: (text: string, record: any) => {
-        const language = navigator.language || navigator.languages[0];
-        const time = record.updatedAt || record.timestamp;
-        const date = new Date(time)
-          .toLocaleString(language, {
-            hour12: false,
-          })
-          .replace(' 24:', ' 00:');
+        const date = dayjs(record.updatedAt || record.timestamp).format(
+          'YYYY-MM-DD HH:mm:ss',
+        );
         return (
           <Tooltip
             placement="topLeft"
